@@ -1,3 +1,14 @@
+# clix [![Build Status][1]][2] [![GoDoc][3]][4] [![Go Report Card][5]][6] [![MIT licensed][7]][8]
+       
+[1]: https://travis-ci.org/lonnng/clix.svg?branch=master
+[2]: https://travis-ci.org/lonnng/clix
+[3]: https://godoc.org/github.com/lonnng/clix?status.svg
+[4]: https://godoc.org/github.com/lonnng/clix
+[5]: https://goreportcard.com/badge/github.com/lonnng/clix
+[6]: https://goreportcard.com/report/github.com/lonnng/clix
+[7]: https://img.shields.io/badge/license-MIT-blue.svg
+[8]: LICENSE
+
 Extension for github.com/urfave/cli
 
 ## Usage

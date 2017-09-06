@@ -87,7 +87,7 @@ func fillField(ctx *cli.Context, structField reflect.StructField, field reflect.
 	}
 
 	if !field.CanSet() {
-		return fmt.Errorf("clix: field `%s` is not changable", structField.Name)
+		return fmt.Errorf("clix: field `%s` can not set", structField.Name)
 	}
 
 	var (

@@ -178,7 +178,7 @@ func TestMakeParser(t *testing.T) {
 		}
 
 		if got := config.StringValue; got != "override" {
-			t.Fatalf("expect=%d, got=%d", "override", got)
+			t.Fatalf("expect=%s, got=%s", "override", got)
 		}
 
 		if got := config.IntSliceValue; reflect.DeepEqual([]int{1, 2, 3}, got) {
