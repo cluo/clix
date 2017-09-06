@@ -1,13 +1,19 @@
 package clix
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
-	"strings"
-
 	"github.com/urfave/cli"
+)
+
+// Errors
+var (
+	ErrNotPointer = errors.New("clix: pointer required")
 )
 
 var durationType = reflect.TypeOf(time.Duration(0))
@@ -37,7 +43,7 @@ func MakeParser(v interface{}) cli.BeforeFunc {
 	hook := func(ctx *cli.Context) error {
 		store := reflect.ValueOf(v)
 		if store.Kind() != reflect.Ptr {
-			panic("pointer require")
+			return ErrNotPointer
 		}
 		for store.Kind() == reflect.Ptr {
 			store = store.Elem()
@@ -50,7 +56,9 @@ func MakeParser(v interface{}) cli.BeforeFunc {
 
 		count := storeType.NumField()
 		for i := 0; i < count; i++ {
-			fillField(ctx, storeType.Field(i), store.Field(i))
+			if err := fillField(ctx, storeType.Field(i), store.Field(i)); err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -59,20 +67,27 @@ func MakeParser(v interface{}) cli.BeforeFunc {
 	return hook
 }
 
-func fillField(ctx *cli.Context, structField reflect.StructField, field reflect.Value) {
+func fillField(ctx *cli.Context, structField reflect.StructField, field reflect.Value) error {
 	name := strings.TrimSpace(structField.Tag.Get("name"))
 	if name == "" {
-		return
+		return nil
 	}
 
 	parts := strings.Split(name, ",")
 	if len(parts) < 1 {
-		return
+		return fmt.Errorf("clix: invalid name tag `%s`", name)
 	}
 
 	name = strings.TrimSpace(parts[0])
+
+	if field.Kind() == reflect.Ptr {
+		v := ctx.Generic(name)
+		field.Set(reflect.ValueOf(v))
+		return nil
+	}
+
 	if !field.CanSet() {
-		return
+		return fmt.Errorf("clix: field `%s` is not changable", structField.Name)
 	}
 
 	var (
@@ -84,9 +99,6 @@ func fillField(ctx *cli.Context, structField reflect.StructField, field reflect.
 		v = ctx.Duration(name)
 	} else {
 		switch filedType.Kind() {
-		case reflect.Interface:
-			v = ctx.Generic(name)
-
 		case reflect.String:
 			v = ctx.String(name)
 
@@ -134,15 +146,16 @@ func fillField(ctx *cli.Context, structField reflect.StructField, field reflect.
 				v = ctx.StringSlice(name)
 
 			default:
-				panic("unsupported slice type")
+				return fmt.Errorf("unsupported slice type: %s", filedType.Elem().Kind().String())
 			}
 
 		default:
-			panic("unsupported field type")
+			return fmt.Errorf("unsupported field type: %s", structField.Name)
 		}
 	}
 
 	field.Set(reflect.ValueOf(v))
+	return nil
 }
 
 // makeFlag build single flag via field
@@ -168,12 +181,10 @@ func makeFlag(filed reflect.StructField) cli.Flag {
 		}
 	}
 
-	println(name, usage, env, value)
-
-	filedType := filed.Type
+	fieldType := filed.Type
 
 	// duration flag
-	if filedType == durationType {
+	if fieldType == durationType {
 		flag := cli.DurationFlag{
 			Name:   name,
 			Usage:  usage,
@@ -193,15 +204,7 @@ func makeFlag(filed reflect.StructField) cli.Flag {
 
 	// cli flags
 	var flag cli.Flag
-	switch filedType.Kind() {
-	case reflect.Interface:
-		flag = cli.GenericFlag{
-			Name:   name,
-			Usage:  usage,
-			Hidden: hidden,
-			EnvVar: env,
-		}
-
+	switch fieldType.Kind() {
 	case reflect.String:
 		flag = cli.StringFlag{
 			Name:   name,
@@ -212,9 +215,13 @@ func makeFlag(filed reflect.StructField) cli.Flag {
 		}
 
 	case reflect.Bool:
-		t, err := strconv.ParseBool(value)
-		if err != nil {
-			panic(err)
+		var t = false
+		if value != "" {
+			r, err := strconv.ParseBool(value)
+			if err != nil {
+				panic(err)
+			}
+			t = r
 		}
 		if t {
 			flag = cli.BoolTFlag{
@@ -313,7 +320,7 @@ func makeFlag(filed reflect.StructField) cli.Flag {
 		flag = f
 
 	case reflect.Slice:
-		switch filedType.Elem().Kind() {
+		switch fieldType.Elem().Kind() {
 		case reflect.Int:
 			f := cli.IntSliceFlag{
 				Name:   name,
@@ -376,7 +383,28 @@ func makeFlag(filed reflect.StructField) cli.Flag {
 		}
 
 	default:
-		panic("unsupported field type")
+		if fieldType.Kind() == reflect.Ptr && fieldType.Elem().Kind() == reflect.Struct {
+			genType := fieldType.Elem()
+			if genType.Kind() == reflect.Ptr {
+				panic("clix: nest pointer type does not supported so far: " + fieldType.String())
+			}
+
+			instance := reflect.New(genType)
+			v, ok := instance.Interface().(cli.Generic)
+			if !ok {
+				panic("clix: field type can not be converted to cli.Generic")
+			}
+			v.Set(value)
+			flag = cli.GenericFlag{
+				Name:   name,
+				Usage:  usage,
+				Hidden: hidden,
+				EnvVar: env,
+				Value:  v,
+			}
+		} else {
+			panic("unsupported field type: " + fieldType.String())
+		}
 	}
 
 	return flag
